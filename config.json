@@ -1,0 +1,46 @@
+{
+    "max_open_trades": 3,
+    "stake_currency": "USDT",
+    "stake_amount": "unlimited",
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "USD",
+    "dry_run": true,
+    "dry_run_wallet": 1000,
+    "timeframe": "15m",
+    "dataformat_ohlcv": "feather",
+    "cancel_open_orders_on_exit": false,
+    "trading_mode": "spot",
+
+    "exchange": {
+        "name": "binance",
+        "key": "",
+        "secret": "",
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": ["BTC/USDT"],
+        "pair_blacklist": []
+    },
+
+    "pairlists": [{"method": "StaticPairList"}],
+
+    "api_server": {
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "enable_openapi": false,
+        "jwt_secret_key": "CHANGE_ME_TO_A_RANDOM_LONG_STRING_1",
+        "ws_token": "CHANGE_ME_TO_A_RANDOM_LONG_STRING_2",
+        "CORS_origins": [],
+        "username": "CHANGE_ME_USERNAME",
+        "password": "CHANGE_ME_STRONG_PASSWORD"
+    },
+
+    "bot_name": "backtest_research_bot",
+    "initial_state": "stopped",
+    "force_entry_enable": false,
+
+    "internals": {
+        "process_throttle_secs": 5
+    }
+}
