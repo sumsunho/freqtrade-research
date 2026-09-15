@@ -32,8 +32,8 @@
         "jwt_secret_key": "CHANGE_ME_TO_A_RANDOM_LONG_STRING_1",
         "ws_token": "CHANGE_ME_TO_A_RANDOM_LONG_STRING_2",
         "CORS_origins": [],
-        "username": "CHANGE_ME_USERNAME",
-        "password": "CHANGE_ME_STRONG_PASSWORD"
+        "username": "sumsunho",
+        "password": "sumsunho"
     },
 
     "bot_name": "backtest_research_bot",
