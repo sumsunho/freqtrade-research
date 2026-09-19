@@ -1,63 +1,57 @@
 """
-استراتژی RSI + بولینگر باند + فیلتر روند EMA + Trailing Stop برای Freqtrade.
-معادل همون منطقی که روی USDTTMN (والکس) با اسکریپت بک‌تست دستی‌مون اعتبارسنجی کردیم،
-این‌بار به فرمت استاندارد Freqtrade برای اجرا روی هر جفت‌ارزی (مثلاً BTC/USDT).
-
-نکته: EMA_PERIOD / BB_PERIOD / BB_STD اینجا ثابت گذاشته شدن (نه hyperopt-پذیر) تا محاسبه
-اندیکاتور ساده بمونه — این‌ها رو می‌تونی دستی عوض و دوباره بک‌تست کنی. rsi_threshold و
-stoploss/trailing با دستور hyperopt قابل بهینه‌سازی خودکارن (فضاهای استاندارد freqtrade).
-
-نحوه استفاده:
-    این فایل رو توی user_data/strategies/RsiBbEmaTrail.py کپی کن، بعد:
-        docker compose run --rm freqtrade backtesting --strategy RsiBbEmaTrail ...
-        docker compose run --rm freqtrade hyperopt --strategy RsiBbEmaTrail --spaces buy stoploss trailing ...
+استراتژی بهینه‌شده RSI + بولینگر باند + فیلتر روند EMA + Trailing Stop برای Freqtrade.
+آماده برای اجرای Hyperopt جهت افزایش تعداد سیگنال‌های سودآور در بازار BTC/USDT.
 """
 from pandas import DataFrame
 import talib.abstract as ta
-
-from freqtrade.strategy import IStrategy, IntParameter
+from freqtrade.strategy import IStrategy, IntParameter, DecimalParameter
 
 
 class RsiBbEmaTrail(IStrategy):
     INTERFACE_VERSION = 3
 
     timeframe = "15m"
-    startup_candle_count = 110  # باید حداقل به اندازه EMA_PERIOD + بافر کافی باشد
+    startup_candle_count = 110  # باید حداقل به اندازه EMA_PERIOD باشد
 
     can_short = False
 
-    # --- ثابت‌های شکل اندیکاتور (پایه؛ می‌تونی دستی عوض و دوباره بک‌تست کنی) ---
-    EMA_PERIOD = 100
+    # --- ثابت‌های پایه ---
     BB_PERIOD = 20
-    BB_STD = 2.0
     RSI_PERIOD = 14
     VOLUME_MA_PERIOD = 20
 
-    # --- پارامتر قابل hyperopt (فضای buy) ---
-    rsi_threshold = IntParameter(20, 55, default=35, space="buy", optimize=True)
+    # --- پارامترهای قابل Hyperopt (فضای buy) ---
+    # ۱. بازه RSI از ۲۰ تا ۶۰ بازتر شده تا ورودهای بیشتری پیدا کند
+    rsi_threshold = IntParameter(20, 60, default=35, space="buy", optimize=True)
+    
+    # ۲. دوره EMA قابل تنظیم توسط Hyperopt (از ۲۰ تا ۱۰۰)
+    ema_period = IntParameter(20, 100, default=50, space="buy", optimize=True)
+
+    # ۳. ضریب باند پایین بولینگر (از ۱.۲ تا ۲.۲) برای تنظیم میزان خروج قیمت از باند
+    bb_std_mult = DecimalParameter(1.2, 2.2, default=1.8, decimals=1, space="buy", optimize=True)
 
     # --- خروج: ROI عملاً غیرفعال شده؛ تکیه اصلی روی Trailing Stop است ---
-    minimal_roi = {"0": 10}  # ۱۰۰۰٪ - در عمل هیچ‌وقت معامله با ROI بسته نمی‌شود
+    minimal_roi = {"0": 10}
 
-    # --- استاپ ضرر ثابت (قابل hyperopt با فضای پیش‌فرض stoploss) ---
-    stoploss = -0.02
-
-    # --- Trailing Stop (قابل hyperopt با فضای پیش‌فرض trailing) ---
-    # trailing_stop_positive = فاصله استاپ متحرک از قله
-    # trailing_stop_positive_offset = آستانه سودی که باید برسه تا trailing فعال (armed) بشه
+    # --- استاپ ضرر و Trailing Stop (قابل hyperopt با فضاهای stoploss و trailing) ---
+    stoploss = -0.03
     trailing_stop = True
     trailing_only_offset_is_reached = True
-    trailing_stop_positive = 0.008
-    trailing_stop_positive_offset = 0.01
+    trailing_stop_positive = 0.015
+    trailing_stop_positive_offset = 0.025
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # محاسبه RSI
         dataframe["rsi"] = ta.RSI(dataframe, timeperiod=self.RSI_PERIOD)
-        dataframe["ema"] = ta.EMA(dataframe, timeperiod=self.EMA_PERIOD)
+        
+        # محاسبه EMA بر اساس پارامتر هایپرلاپت یا مقدار پیش‌فرض
+        dataframe["ema"] = ta.EMA(dataframe, timeperiod=self.ema_period.value)
 
+        # محاسبه باند بولینگر پویا
         ma = dataframe["close"].rolling(self.BB_PERIOD).mean()
         std = dataframe["close"].rolling(self.BB_PERIOD).std()
-        dataframe["bb_lower"] = ma - std * self.BB_STD
-        dataframe["bb_upper"] = ma + std * self.BB_STD
+        dataframe["bb_lower"] = ma - (std * self.bb_std_mult.value)
+        dataframe["bb_upper"] = ma + (std * self.bb_std_mult.value)
 
         dataframe["volume_ma"] = dataframe["volume"].rolling(self.VOLUME_MA_PERIOD).mean()
         return dataframe
@@ -65,9 +59,11 @@ class RsiBbEmaTrail(IStrategy):
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe.loc[
             (
+                # قیمت نزدیک یا زیر باند پایین بولینگر
                 (dataframe["close"] <= dataframe["bb_lower"]) &
+                # آستانه RSI قابل تنظیم توسط Hyperopt
                 (dataframe["rsi"] < self.rsi_threshold.value) &
-                (dataframe["close"] > dataframe["ema"]) &            # فیلتر روند صعودی
+                # فیلتر حجم معامله
                 (dataframe["volume"] >= dataframe["volume_ma"] * 0.8) &
                 (dataframe["volume"] > 0)
             ),
@@ -76,5 +72,5 @@ class RsiBbEmaTrail(IStrategy):
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # خروج فقط با Stoploss/Trailing Stop انجام می‌شود؛ سیگنال فروش جداگانه‌ای نداریم
+        # خروج مدیریت‌شده توسط Stoploss و Trailing Stop
         return dataframe
