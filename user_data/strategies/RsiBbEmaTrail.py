@@ -1,5 +1,6 @@
 """
-استراتژی بهینه‌شده RSI + بولینگر باند (Mean Reversion) + خروج هوشمند در باند بالا برای تایم‌فریم 1h.
+استراتژی نهایی بهینه‌شده RSI + بولینگر باند (Mean Reversion)
+بر اساس نتایج موفق Hyperopt (برآیند سودآور).
 """
 from pandas import DataFrame
 import talib.abstract as ta
@@ -20,18 +21,24 @@ class RsiBbEmaTrail(IStrategy):
     BB_STD = 2.0
     RSI_PERIOD = 14
 
-    # --- پارامتر ورودی ---
-    rsi_threshold = IntParameter(30, 50, default=42, space="buy", optimize=True)
-
-    # --- ROI انعطاف‌پذیر ---
-    minimal_roi = {
-        "0": 0.05,     # ۵٪ سود در صورت جهش ناگهانی
-        "180": 0.02,   # ۲٪ سود بعد از ۳ ساعت
-        "360": 0.01    # ۱٪ سود بعد از ۶ ساعت
+    # --- پارامترهای بهینه‌شده Buy از Hyperopt ---
+    buy_params = {
+        "rsi_threshold": 37,
     }
 
-    # --- حد زیان ---
-    stoploss = -0.025  # ۲.۵ درصد
+    rsi_threshold = IntParameter(30, 50, default=37, space="buy", optimize=False)
+
+    # --- جدول ROI بهینه‌شده از Hyperopt ---
+    minimal_roi = {
+        "0": 0.118,
+        "90": 0.101,
+        "180": 0.042,
+        "393": 0
+    }
+
+    # --- حد زیان (Stoploss) کنترل‌شده ---
+    # برای جلوگیری از ریسک ۳۳ درصدی، استاپ‌لاوس روی ۴.۵٪ تنظیم شد
+    stoploss = -0.045
 
     trailing_stop = False
 
@@ -49,12 +56,12 @@ class RsiBbEmaTrail(IStrategy):
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe.loc[
             (
-                # برگشت قیمت از زیر باند پایین به بالای آن
+                # ۱. برگشت قیمت از زیر باند پایین به بالای آن
                 (dataframe["close"].shift(1) <= dataframe["bb_lower"].shift(1)) &
                 (dataframe["close"] > dataframe["bb_lower"]) &
-                # فیلتر روند صعودی
+                # ۲. ورود فقط در روند صعودی کلی (بالای EMA 200)
                 (dataframe["close"] > dataframe["ema200"]) &
-                # آستانه RSI
+                # ۳. آستانه RSI بهینه‌شده (زیر ۳۷)
                 (dataframe["rsi"] < self.rsi_threshold.value) &
                 (dataframe["volume"] > 0)
             ),
@@ -65,7 +72,7 @@ class RsiBbEmaTrail(IStrategy):
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe.loc[
             (
-                # سیگنال خروج: برخورد قیمت به باند بالای بولینگر یا رسیدن RSI به اشباع خرید (۷۰)
+                # سیگنال خروج: برخورد قیمت به باند بالای بولینگر یا رسیدن RSI به ۷۰
                 (dataframe["close"] >= dataframe["bb_upper"]) |
                 (dataframe["rsi"] >= 70)
             ),
