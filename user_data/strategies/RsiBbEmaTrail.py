@@ -1,9 +1,14 @@
 """
-استراتژی RSI + بولینگر باند با فیلتر روند ۴ ساعته (کاهش نویز و حفظ فرکانس معامله)
+استراتژی RSI + بولینگر باند با فیلتر روند ۴ ساعته
+کد اصلاح‌شده - بدون خطای NameError
 """
 from pandas import DataFrame
 import talib.abstract as ta
-from freqtrade.strategy import IStrategy, IntParameter
+from freqtrade.strategy import (
+    IStrategy,
+    IntParameter,
+    merge_informative_pair
+)
 
 
 class RsiBbEmaTrail(IStrategy):
@@ -37,13 +42,12 @@ class RsiBbEmaTrail(IStrategy):
     trailing_stop = False
 
     def informative_pairs(self):
-        # دریافت داده‌های تایم‌فریم ۴ ساعته برای فیلتر روند کلان
+        # دریافت داده‌های ۴ ساعته برای فیلتر روند
         pairs = self.dp.current_whitelist()
-        informative_pairs = [(pair, self.informative_timeframe) for pair in pairs]
-        return informative_pairs
+        return [(pair, self.informative_timeframe) for pair in pairs]
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # ۱. اندیکاتورهای تایم‌فریم اصلی (۱ ساعته)
+        # ۱. اندیکاتورهای تایم‌فریم اصلی
         dataframe["rsi"] = ta.RSI(dataframe, timeperiod=self.RSI_PERIOD)
 
         ma = dataframe["close"].rolling(self.BB_PERIOD).mean()
@@ -52,11 +56,11 @@ class RsiBbEmaTrail(IStrategy):
         dataframe["bb_upper"] = ma + (std * self.BB_STD)
         dataframe["bb_middle"] = ma
 
-        # ۲. اندیکاتور تایم‌فریم ۴ ساعته برای فیلتر روند
+        # ۲. دریافت داده ۴ ساعته و محاسبه EMA 200
         informative = self.dp.get_pair_dataframe(pair=metadata["pair"], timeframe=self.informative_timeframe)
-        informative["ema200_4h"] = ta.EMA(informative, timeperiod=200)
+        informative["ema200"] = ta.EMA(informative, timeperiod=200)
 
-        # ادغام داده‌های ۴ ساعته با ۱ ساعته
+        # ادغام ایمن داده‌های ۴ ساعته در تایم‌فریم اصلی
         dataframe = merge_informative_pair(
             dataframe, informative, self.timeframe, self.informative_timeframe, ffill=True
         )
@@ -64,16 +68,19 @@ class RsiBbEmaTrail(IStrategy):
         return dataframe
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # نام ستون ادغام‌شده ۴ ساعته
+        ema_4h_col = f"ema200_{self.informative_timeframe}"
+
         dataframe.loc[
             (
-                # ۱. برگشت قیمت از زیر باند پایین به بالای آن در ۱ ساعته
+                # ۱. برگشت قیمت از زیر/روی باند پایین به بالای آن
                 (dataframe["close"].shift(1) <= dataframe["bb_lower"].shift(1)) &
                 (dataframe["close"] > dataframe["bb_lower"]) &
                 
-                # ۲. روند کلان صعودی در ۴ ساعته (قیمت بالای EMA 200 ۴ ساعته)
-                (dataframe["close"] > dataframe["ema200_4h_4h"]) &
+                # ۲. فیلتر روند صعودی ۴ ساعته (قیمت بالای EMA 200 ۴ ساعته)
+                (dataframe["close"] > dataframe[ema_4h_col]) &
                 
-                # ۳. آستانه RSI زیر ۴۲
+                # ۳. آستانه RSI مناسب
                 (dataframe["rsi"] < self.rsi_threshold.value) &
                 
                 (dataframe["volume"] > 0)
