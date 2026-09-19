@@ -1,6 +1,6 @@
 """
-استراتژی نوسان‌گیری بهینه‌شده RSI + بولینگر باند
-دارای فیلتر روند میان‌مدت (EMA 50) برای حفظ سودآوری و افزایش تعداد معاملات
+استراتژی بهینه‌شده RSI + بولینگر باند
+حل مشکل شرط متناقض EMA و فعال‌سازی مجدد سیگنال‌های ورود
 """
 from pandas import DataFrame
 import talib.abstract as ta
@@ -16,24 +16,24 @@ class RsiBbEmaTrail(IStrategy):
     can_short = False
 
     # --- تنظیمات اندیکاتورها ---
-    EMA_PERIOD = 50   # روند میان‌مدت به جای ۲۰۰ تا معاملات بیشتری تایید شوند
+    EMA_PERIOD = 50
     BB_PERIOD = 20
     BB_STD = 2.0
     RSI_PERIOD = 14
 
     # --- پارامترهای ورود ---
-    rsi_threshold = IntParameter(30, 50, default=42, space="buy", optimize=False)
+    rsi_threshold = IntParameter(30, 50, default=45, space="buy", optimize=False)
 
-    # --- جدول ROI پله‌ای ---
+    # --- جدول ROI ---
     minimal_roi = {
-        "0": 0.05,      # ۵٪ سود بلافاصله
-        "60": 0.025,    # ۲.۵٪ سود بعد از ۱ ساعت
-        "180": 0.012,   # ۱.۲٪ سود بعد از ۳ ساعت
-        "360": 0        # خروج روی نقطه بهینه بعد از ۶ ساعت
+        "0": 0.04,
+        "120": 0.02,
+        "360": 0.01,
+        "720": 0
     }
 
     # --- حد زیان ---
-    stoploss = -0.035   # حد زیان ۳.۵ درصد
+    stoploss = -0.035  # ۳.۵ درصد حد زیان
 
     trailing_stop = False
 
@@ -51,14 +51,17 @@ class RsiBbEmaTrail(IStrategy):
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe.loc[
             (
-                # ۱. برگشت قیمت از زیر باند پایین به بالای آن (شکست رو به بالا)
+                # ۱. برگشت قیمت از زیر باند پایین به بالای آن
                 (dataframe["close"].shift(1) <= dataframe["bb_lower"].shift(1)) &
                 (dataframe["close"] > dataframe["bb_lower"]) &
                 
-                # ۲. فیلتر روند میان‌مدت (قیمت بالای EMA 50 باشد یا EMA 50 شیب صعودی داشته باشد)
-                (dataframe["close"] > dataframe["ema50"]) &
+                # ۲. فیلتر روند اصلاح‌شده: شیب مثبت EMA 50 (روند صعودی) یا قیمت بالای EMA 50
+                (
+                    (dataframe["ema50"] >= dataframe["ema50"].shift(3)) |
+                    (dataframe["close"] > dataframe["ema50"])
+                ) &
                 
-                # ۳. آستانه RSI (زیر ۴۲)
+                # ۳. آستانه RSI مناسب
                 (dataframe["rsi"] < self.rsi_threshold.value) &
                 
                 (dataframe["volume"] > 0)
@@ -70,9 +73,9 @@ class RsiBbEmaTrail(IStrategy):
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe.loc[
             (
-                # خروج در برخورد به باند بالا یا رسیدن RSI به ۶۸
+                # خروج در برخورد به باند بالا یا RSI بالای ۶۵
                 (dataframe["close"] >= dataframe["bb_upper"]) |
-                (dataframe["rsi"] >= 68)
+                (dataframe["rsi"] >= 65)
             ),
             "exit_long",
         ] = 1
