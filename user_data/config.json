@@ -12,7 +12,7 @@
     "trading_mode": "spot",
 
     "exchange": {
-        "name": "kraken",
+        "name": "okx",
         "key": "",
         "secret": "",
         "ccxt_config": {},
