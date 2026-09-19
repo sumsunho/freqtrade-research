@@ -1,6 +1,6 @@
 """
-استراتژی بهینه‌شده RSI + بولینگر باند + فیلتر روند EMA + Trailing Stop برای Freqtrade.
-کاملاً سازگار با فرآیند Hyperopt جهت جلوگیری از کرش سرور.
+استراتژی بازنویسی شده RSI + بولینگر باند (Mean Reversion) + ROI سریع برای Freqtrade.
+طراحی‌شده برای دریافت سیگنال‌های زیاد و خروج سریع در سود در تایم‌فریم‌های پایین (15m).
 """
 from pandas import DataFrame
 import talib.abstract as ta
@@ -18,23 +18,26 @@ class RsiBbEmaTrail(IStrategy):
     # --- ثابت‌های اندیکاتورها ---
     EMA_PERIOD = 50
     BB_PERIOD = 20
-    BB_STD = 1.8
+    BB_STD = 2.0
     RSI_PERIOD = 14
     VOLUME_MA_PERIOD = 20
 
     # --- پارامتر قابل Hyperopt (فضای buy) ---
-    # آستانه RSI قابل بهینه‌سازی بین ۲۰ تا ۶۰
-    rsi_threshold = IntParameter(20, 60, default=35, space="buy", optimize=True)
+    # آستانه RSI قابل تنظیم بین ۳۰ تا ۵۵
+    rsi_threshold = IntParameter(30, 55, default=40, space="buy", optimize=True)
 
-    # --- خروج: ROI غیرفعال ---
-    minimal_roi = {"0": 10}
+    # --- خروج پلکانی سریع (ROI) ---
+    minimal_roi = {
+        "0": 0.03,    # خروج فوری در ۳٪ سود
+        "30": 0.02,   # خروج بعد از ۳۰ دقیقه در ۲٪ سود
+        "60": 0.01    # خروج بعد از ۱ ساعت در ۱٪ سود
+    }
 
-    # --- استاپ ضرر و Trailing Stop پیش‌فرض (قابل Hyperopt) ---
-    stoploss = -0.03
-    trailing_stop = True
-    trailing_only_offset_is_reached = True
-    trailing_stop_positive = 0.015
-    trailing_stop_positive_offset = 0.025
+    # --- حد زیان ثابت و منطقی ---
+    stoploss = -0.03  # حد زیان ۳ درصدی
+
+    # --- خاموش کردن Trailing Stop برای جلوگیری از گیر کردن پوزیشن‌ها ---
+    trailing_stop = False
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe["rsi"] = ta.RSI(dataframe, timeperiod=self.RSI_PERIOD)
@@ -51,9 +54,14 @@ class RsiBbEmaTrail(IStrategy):
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe.loc[
             (
-                (dataframe["close"] <= dataframe["bb_lower"]) &
+                # ۱. کندل قبلی زیر یا روی باند پایین بوده، ولی کندل فعلی بالای باند بسته شده (شرط برگشت)
+                (dataframe["close"].shift(1) <= dataframe["bb_lower"].shift(1)) &
+                (dataframe["close"] > dataframe["bb_lower"]) &
+                
+                # ۲. RSI زیر آستانه تعیین شده
                 (dataframe["rsi"] < self.rsi_threshold.value) &
-                (dataframe["volume"] >= dataframe["volume_ma"] * 0.8) &
+                
+                # ۳. فیلتر حجم معامله
                 (dataframe["volume"] > 0)
             ),
             "enter_long",
