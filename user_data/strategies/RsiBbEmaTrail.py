@@ -26,10 +26,10 @@ class RsiBbEmaTrail(IStrategy):
 
     can_short = False
 
-    # --- ثابت‌های شکل اندیکاتور (نقطه شروع بر پایه تجربه USDTTMN؛ دستی قابل تغییرن) ---
-    EMA_PERIOD = 50
+    # --- ثابت‌های شکل اندیکاتور (پایه؛ می‌تونی دستی عوض و دوباره بک‌تست کنی) ---
+    EMA_PERIOD = 100
     BB_PERIOD = 20
-    BB_STD = 0.75
+    BB_STD = 2.0
     RSI_PERIOD = 14
     VOLUME_MA_PERIOD = 20
 
