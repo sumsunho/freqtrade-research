@@ -12,7 +12,7 @@
     "trading_mode": "spot",
 
     "exchange": {
-        "name": "binance",
+        "name": "kraken",
         "key": "",
         "secret": "",
         "ccxt_config": {},
@@ -32,8 +32,8 @@
         "jwt_secret_key": "CHANGE_ME_TO_A_RANDOM_LONG_STRING_1",
         "ws_token": "CHANGE_ME_TO_A_RANDOM_LONG_STRING_2",
         "CORS_origins": [],
-        "username": "sumsunho",
-        "password": "sumsunho"
+        "username": "CHANGE_ME_USERNAME",
+        "password": "CHANGE_ME_STRONG_PASSWORD"
     },
 
     "bot_name": "backtest_research_bot",
